@@ -31,7 +31,7 @@ class NeakasaAPI:
         self.connected: bool = False
 
     async def connect(self, username: str, password: str, firstRun: bool = True):
-        if self.connected == False:
+        if not self.connected:
             await self._loadBaseUrlByAccount(username)
             await self.loadAuthTokens(username, password)
             await self._loadRegionData()
@@ -40,11 +40,11 @@ class NeakasaAPI:
         try:
             self._iotToken = await self._getIotTokenBySid(self._sid)
             self.connected = True
-        except APIAuthError as exc:
+        except APIConnectionError:
             if firstRun:
                 await self.connect(username, password, False)
             else:
-                raise exc
+                raise
     
     async def _loadBaseUrlByAccount(self, username: str):
         try:
@@ -231,7 +231,7 @@ class NeakasaAPI:
         return response_data['data']['iotToken']
 
     async def getProductList(self):
-        if self.connected == False:
+        if not self.connected:
             raise APIConnectionError("api not connected")
         config = Config(
             app_key=self._app_key,
@@ -261,7 +261,7 @@ class NeakasaAPI:
         return response_data['data']
 
     async def getDevices(self, pageNo: int = 1, pageSize: int = 20):
-        if self.connected == False:
+        if not self.connected:
             raise APIConnectionError("api not connected")
         config = Config(
             app_key=self._app_key,
@@ -294,7 +294,7 @@ class NeakasaAPI:
         return response_data['data']['data']
 
     async def getDeviceProperties(self, iotId: str):
-        if self.connected == False:
+        if not self.connected:
             raise APIConnectionError("api not connected")
         
         # Debug logging for authentication tokens
@@ -328,18 +328,18 @@ class NeakasaAPI:
         if response_data['code'] != 200:
             # Check for specific authentication errors that should trigger reconnection
             if "identityId is blank" in response_data['message']:
-                _LOGGER.debug(f"IdentityId error detected, marking API as disconnected for automatic reconnection")
+                _LOGGER.debug("IdentityId error detected, marking API as disconnected for automatic reconnection")
                 self.connected = False
                 raise APIConnectionError("Error getting device properties: " + response_data['message'])
             else:
                 # For other errors, log as error since they're not automatically recoverable
                 _LOGGER.error(f"API Error - Code: {response_data['code']}, Message: {response_data['message']}")
                 _LOGGER.error(f"iotToken: {self._iotToken[:20] if hasattr(self, '_iotToken') and self._iotToken else 'None'}...")
-                raise APIConnectionError("Error getting device properties: " + response_data['message'])
+                raise APIConnectionError(f"Error getting device properties: {response_data.get('message', 'Unknown error')}")
         return response_data['data']
 
     async def setDeviceProperties(self, iotId: str, items: dict[str, any]):
-        if self.connected == False:
+        if not self.connected:
             raise APIConnectionError("api not connected")
         config = Config(
             app_key=self._app_key,
@@ -366,10 +366,11 @@ class NeakasaAPI:
         )
         response_data = json.loads(response.body)
         if response_data['code'] != 200:
-            raise APIConnectionError("Error setting device properties.")
+            _LOGGER.error("Error setting device properties: %s", response_data)
+            raise APIConnectionError(f"Error setting device properties: {response_data.get('message', 'Unknown error')}")
 
     async def _invokeService(self, iotId: str, identifier: str, args: dict[str, any]):
-        if self.connected == False:
+        if not self.connected:
             raise APIConnectionError("api not connected")
         config = Config(
             app_key=self._app_key,
@@ -397,10 +398,92 @@ class NeakasaAPI:
         )
         response_data = json.loads(response.body)
         if response_data['code'] != 200:
-            raise APIConnectionError("Error invoking service.")
+            _LOGGER.error("Error invoking service: %s", response_data)
+            raise APIConnectionError(f"Error invoking service: {response_data.get('message', 'Unknown error')}")
     
     async def cleanNow(self, iotId: str):
         await self._invokeService(iotId, "cleanNow", {"bStartClean":1})
+    
+    async def goHome(self, iotId: str):
+        # Android Logcat discovery: 'click_charge' sends WorkMode=13 then AppState=1
+        try:
+            _LOGGER.debug("Setting WorkMode=13 and AppState=1 for return home")
+            await self.setDeviceProperties(iotId, {"WorkMode": 13, "AppState": 1})
+            return
+        except Exception as exc:
+            _LOGGER.debug(f"Combined Return Home failed: {exc}")
+
+        # Fallback: Try service-based charging
+        for srv in ["chargeNow", "goHome", "startCharge"]:
+            try:
+                _LOGGER.debug(f"Trying service fallback: {srv}")
+                await self._invokeService(iotId, srv, {"bStartCharge": 1} if "Charge" in srv else {})
+                return
+            except Exception:
+                continue
+        
+        raise APIConnectionError("Could not find the 'Return to Charging Base' command.")
+    
+    async def findMe(self, iotId: str):
+        # Android Discovery: SettingsActivityVm.callRobot sends {'FindRobot': 8}
+        try:
+            _LOGGER.debug("Locating robot using FindRobot=8")
+            await self.setDeviceProperties(iotId, {"FindRobot": 8})
+            return
+        except Exception as exc:
+            _LOGGER.debug(f"FindRobot=8 failed: {exc}")
+
+        # Fallback: try common identifiers
+        for ident in ["findMe", "locate"]:
+            try:
+                _LOGGER.debug(f"Trying locate fallback (service): {ident}")
+                await self._invokeService(iotId, ident, {})
+                return
+            except Exception:
+                try:
+                    _LOGGER.debug(f"Trying locate fallback (property): {ident}")
+                    await self.setDeviceProperties(iotId, {ident: 1})
+                    return
+                except Exception:
+                    continue
+        
+        _LOGGER.error("Could not find any 'Locate' (Find Me) service or property for this device.")
+    
+    async def getDeviceTSL(self, iotId: str, productKey: str = None):
+        if not self.connected:
+            return None
+        
+        # Primary endpoint and version found in typical Neakasa/Aliyun setups
+        endpoint = '/thing/model/get'
+        ver = '1.0.4'
+        try:
+            config = Config(
+                app_key=self._app_key,
+                app_secret=self._app_secret,
+                domain=self.apiGatewayEndpoint
+            )
+            client = Client(config)
+            request = CommonParams(api_ver=ver, language=self._language, iot_token=self._iotToken)
+            
+            params = {"iotId": iotId}
+            if productKey:
+                params["productKey"] = productKey
+            
+            body = IoTApiRequest(version="1.0", params=params, request=request)
+            _LOGGER.debug(f"Requesting TSL from {endpoint} (ver: {ver})")
+            response = await self.async_executor(client.do_request,
+                endpoint, 'https', 'POST', None, body, RuntimeOptions()
+            )
+            
+            if response.body:
+                response_data = json.loads(response.body)
+                if response_data['code'] == 200 and response_data.get('data'):
+                    _LOGGER.info(f"Successfully discovered TSL from {endpoint}")
+                    return response_data['data']
+        except Exception:
+            pass
+        
+        return None
     
     async def sandLeveling(self, iotId: str):
         await self._invokeService(iotId, "sandLeveling", {"bStartLeveling":1})
@@ -429,7 +512,7 @@ class NeakasaAPI:
                 if response_json['code'] != 0:
                     raise APIConnectionError("Error getting statistics: " + response_json['message'])
                 return response_json['data']
-        except ClientError as exc:
+        except ClientError:
             raise APIConnectionError("Error connecting to api.")
     
     async def getRecords(self, deviceName: str):
@@ -456,7 +539,7 @@ class NeakasaAPI:
                 if response_json['code'] != 0:
                     raise APIConnectionError("Error getting statistics: " + response_json['message'])
                 return response_json['data']
-        except ClientError as exc:
+        except ClientError:
             raise APIConnectionError("Error connecting to api.")
 
 class APIAuthError(Exception):

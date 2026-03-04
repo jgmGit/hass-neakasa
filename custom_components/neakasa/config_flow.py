@@ -51,16 +51,27 @@ class NeakasaConfigFlow(ConfigFlow, domain=DOMAIN):
             await api.connect(self._username, self._password)
 
             devices = await api.getDevices()
-            discovered_devices: dict[str, str] = {}
+            _LOGGER.debug("Discovered Neakasa devices: %s", devices)
+            self._discovered_devices = {}
             for device in devices:
-                if device.get("categoryKey") == "CatLitter":
-                    device_id = device.get("iotId")
-                    device_name = device.get("deviceName") or device_id
-                    if device_id:
-                        discovered_devices[device_id] = device_name
+                category = device.get("categoryKey")
+                device_id = device.get("iotId")
+                device_name = device.get("deviceName") or device_id
+                
+                _LOGGER.debug("Inspecting device: %s, category: %s", device_name, category)
+                
+                # Support CatLitter and try to find the vacuum
+                # We'll be more inclusive for now to see what's returned
+                if category:
+                    self._discovered_devices[device_id] = {
+                        "name": device_name,
+                        "category": category,
+                        "productKey": device.get("productKey"),
+                        "deviceModel": device.get("deviceModel"),
+                    }
 
-            self._discovered_devices = discovered_devices
             if not self._discovered_devices:
+                _LOGGER.warning("No devices found in Neakasa account")
                 return self.async_abort(reason="no_devices_found")
 
             return await self.async_step_device(None)
@@ -74,24 +85,32 @@ class NeakasaConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_device(self, user_input: dict[str, Any] | None = None):
         if user_input is None:
+            # Generate choices for the dropdown
+            device_choices = {
+                id: info["name"] for id, info in self._discovered_devices.items()
+            }
             return self.async_show_form(
                 step_id="device",
                 data_schema=vol.Schema(
-                    {vol.Required(CONF_DEVICE_ID): vol.In(self._discovered_devices)}
+                    {vol.Required(CONF_DEVICE_ID): vol.In(device_choices)}
                 ),
             )
 
         device_id = user_input[CONF_DEVICE_ID]
+        device_info = self._discovered_devices[device_id]
+        
         # Keep device id as the entry's unique id too, to avoid dup device entries
-        # If you prefer *one* entry that owns *multiple* devices, move device selection to OptionsFlow instead.
         await self.async_set_unique_id(device_id, raise_on_progress=False)
         self._abort_if_unique_id_configured()
 
         data = {
             CONF_DEVICE_ID: device_id,
-            CONF_FRIENDLY_NAME: self._discovered_devices[device_id],
+            CONF_FRIENDLY_NAME: device_info["name"],
             CONF_USERNAME: self._username,
             CONF_PASSWORD: self._password,
+            "category": device_info["category"],
+            "productKey": device_info.get("productKey"),
+            "deviceModel": device_info.get("deviceModel"),
         }
-        title = self._discovered_devices[device_id]
+        title = device_info["name"]
         return self.async_create_entry(title=title, data=data)

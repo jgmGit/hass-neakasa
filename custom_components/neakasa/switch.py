@@ -37,19 +37,25 @@ async def async_setup_entry(
         identifiers={(DOMAIN, coordinator.deviceid)}
     )
 
-    # Enumerate all the sensors in your data value from your DataUpdateCoordinator and add an instance of your sensor class
-    # to a list for each one.
-    # This maybe different in your specific case, depending on how your data is structured
-    sensors = [
-        NeakasaSwitch(coordinator, device_info, translation="auto_clean", key="cleanCfg", subkey="active", icon="mdi:vacuum"),
-        NeakasaSwitch(coordinator, device_info, translation="young_cat_mode", key="youngCatMode", visible=False, icon="mdi:cat"),
-        NeakasaSwitch(coordinator, device_info, translation="child_lock", key="childLockOnOff", icon="mdi:lock-alert"),
-        NeakasaSwitch(coordinator, device_info, translation="auto_bury", key="autoBury", icon="mdi:window-closed"),
-        NeakasaSwitch(coordinator, device_info, translation="auto_level", key="autoLevel", icon="mdi:spirit-level"),
-        NeakasaSwitch(coordinator, device_info, translation="silent_mode", key="silentMode", icon="mdi:volume-off"),
-        NeakasaSwitch(coordinator, device_info, translation="auto_recovery", key="autoForceInit", visible=False, icon="mdi:alert-outline"),
-        NeakasaSwitch(coordinator, device_info, translation="unstoppable_cycle", key="bIntrptRangeDet", icon="mdi:cached")
-    ]
+    sensors = []
+
+    if coordinator.category == "CatLitter":
+        sensors.extend([
+            NeakasaSwitch(coordinator, device_info, translation="auto_clean", key="cleanCfg", subkey="active", icon="mdi:vacuum"),
+            NeakasaSwitch(coordinator, device_info, translation="young_cat_mode", key="youngCatMode", visible=False, icon="mdi:cat"),
+            NeakasaSwitch(coordinator, device_info, translation="child_lock", key="childLockOnOff", icon="mdi:lock-alert"),
+            NeakasaSwitch(coordinator, device_info, translation="auto_bury", key="autoBury", icon="mdi:window-closed"),
+            NeakasaSwitch(coordinator, device_info, translation="auto_level", key="autoLevel", icon="mdi:spirit-level"),
+            NeakasaSwitch(coordinator, device_info, translation="silent_mode", key="silentMode", icon="mdi:volume-off"),
+            NeakasaSwitch(coordinator, device_info, translation="auto_recovery", key="autoForceInit", visible=False, icon="mdi:alert-outline"),
+            NeakasaSwitch(coordinator, device_info, translation="unstoppable_cycle", key="bIntrptRangeDet", icon="mdi:cached")
+        ])
+    else:
+        # Vacuum Robot switches
+        sensors.extend([
+            NeakasaSwitch(coordinator, device_info, translation="led_switch", key="LedSwitch", icon="mdi:lightbulb"),
+            NeakasaSwitch(coordinator, device_info, translation="quiet_mode", key="Quiet", icon="mdi:volume-off"),
+        ])
 
     # Create the sensors.
     async_add_entities(sensors)
@@ -94,14 +100,19 @@ class NeakasaSwitch(CoordinatorEntity):
     @property
     def is_on(self) -> bool:
         """Return the state of the sensor."""
-        value = getattr(self.coordinator.data, self.data_key, None)
+        if self.coordinator.category == "CatLitter":
+            value = getattr(self.coordinator.data, self.data_key, None)
 
-        if self.data_subkey is None:
-            return value
+            if self.data_subkey is None:
+                return value
 
-        sub_value = value.get(self.data_subkey, None)
+            sub_value = value.get(self.data_subkey, None)
 
-        return sub_value
+            return sub_value
+        
+        # Vacuum mapping
+        val = self.coordinator.data.raw_data.get(self.data_key, {}).get("value")
+        return val == 1
 
     @property
     def state(self):
