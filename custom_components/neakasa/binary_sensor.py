@@ -34,12 +34,13 @@ async def async_setup_entry(
         manufacturer="Neakasa",
         identifiers={(DOMAIN, coordinator.deviceid)}
     )
-    # Enumerate all the sensors in your data value from your DataUpdateCoordinator and add an instance of your sensor class
-    # to a list for each one.
-    # This maybe different in your specific case, depending on how your data is structured
-    sensors = [
-        NeakasaBinarySensor(coordinator, device_info, translation="bin_full", key="binFullWaitReset", icon="mdi:delete-empty")
-    ]
+
+    sensors = []
+
+    if coordinator.category == "CatLitter":
+        sensors.append(
+            NeakasaBinarySensor(coordinator, device_info, translation="bin_full", key="binFullWaitReset", icon="mdi:delete-empty")
+        )
 
     # Create the sensors.
     async_add_entities(sensors)

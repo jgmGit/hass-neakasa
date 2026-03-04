@@ -28,23 +28,32 @@ async def async_setup_entry(
         manufacturer="Neakasa",
         identifiers={(DOMAIN, coordinator.deviceid)}
     )
-    # Enumerate all the sensors in your data value from your DataUpdateCoordinator and add an instance of your sensor class
-    # to a list for each one.
-    # This maybe different in your specific case, depending on how your data is structured
-    sensors = [
-        NeakasaSensor(coordinator, device_info, translation="sand_percent", key="sandLevelPercent", unit=PERCENTAGE),
-        NeakasaSensor(coordinator, device_info, translation="wifi_rssi", key="wifiRssi", unit=SIGNAL_STRENGTH_DECIBELS, visible=False, category=EntityCategory.DIAGNOSTIC, icon="mdi:wifi"),
-        NeakasaSensor(coordinator, device_info, translation="stay_time", key="stayTime", unit=UnitOfTime.SECONDS, visible=False),
-        NeakasaTimestampSensor(coordinator, device_info, translation="last_usage", key="lastUse"),
-        NeakasaMapSensor(coordinator, device_info, translation="current_status", key="bucketStatus", options=['idle', 'cleaning', 'cleaning', 'leveling', 'flipover', 'cat_present', 'paused', 'side_bin_locking_panels_missing', None, 'cleaning_interrupted'], icon="mdi:state-machine"),
-        NeakasaMapSensor(coordinator, device_info, translation="sand_state", key="sandLevelState", options=['insufficient', 'moderate', 'sufficient', 'overfilled']),
-        NeakasaMapSensor(coordinator, device_info, translation="bin_state", key="room_of_bin", options=['normal', 'full', 'missing'], icon="mdi:delete")
-    ]
+    
+    sensors = []
 
-    for cat in coordinator.data.cat_list:
-        sensors.append(
-            NeakasaCatSensor(coordinator, device_info, catName=cat['name'], catId=cat['id'], icon="mdi:cat")
-        )
+    if coordinator.category == "CatLitter":
+        sensors.extend([
+            NeakasaSensor(coordinator, device_info, translation="sand_percent", key="sandLevelPercent", unit=PERCENTAGE),
+            NeakasaSensor(coordinator, device_info, translation="wifi_rssi", key="wifiRssi", unit=SIGNAL_STRENGTH_DECIBELS, visible=False, category=EntityCategory.DIAGNOSTIC, icon="mdi:wifi"),
+            NeakasaSensor(coordinator, device_info, translation="stay_time", key="stayTime", unit=UnitOfTime.SECONDS, visible=False),
+            NeakasaTimestampSensor(coordinator, device_info, translation="last_usage", key="lastUse"),
+            NeakasaMapSensor(coordinator, device_info, translation="current_status", key="bucketStatus", options=['idle', 'cleaning', 'cleaning', 'leveling', 'flipover', 'cat_present', 'paused', 'side_bin_locking_panels_missing', None, 'cleaning_interrupted'], icon="mdi:state-machine"),
+            NeakasaMapSensor(coordinator, device_info, translation="sand_state", key="sandLevelState", options=['insufficient', 'moderate', 'sufficient', 'overfilled']),
+            NeakasaMapSensor(coordinator, device_info, translation="bin_state", key="room_of_bin", options=['normal', 'full', 'missing'], icon="mdi:delete")
+        ])
+
+        for cat in coordinator.data.cat_list:
+            sensors.append(
+                NeakasaCatSensor(coordinator, device_info, catName=cat['name'], catId=cat['id'], icon="mdi:cat")
+            )
+    else:
+        # Vacuum Robot sensors
+        sensors.extend([
+            NeakasaSensor(coordinator, device_info, translation="battery", key="battery", unit=PERCENTAGE, icon="mdi:battery", device_class=SensorDeviceClass.BATTERY),
+            NeakasaSensor(coordinator, device_info, translation="clean_area", key="clean_area", unit="m²", icon="mdi:map-marker-path"),
+            NeakasaSensor(coordinator, device_info, translation="clean_time", key="clean_time", unit=UnitOfTime.SECONDS, icon="mdi:timer-outline"),
+            NeakasaSensor(coordinator, device_info, translation="wifi_rssi", key="wifiRssi", unit=SIGNAL_STRENGTH_DECIBELS, visible=False, category=EntityCategory.DIAGNOSTIC, icon="mdi:wifi"),
+        ])
 
     # Create the sensors.
     async_add_entities(sensors)
@@ -99,7 +108,7 @@ class NeakasaSensor(CoordinatorEntity):
     _attr_should_poll = False
     _attr_has_entity_name = True
     
-    def __init__(self, coordinator: NeakasaCoordinator, deviceinfo: DeviceInfo, translation: str, key: str, unit: str, icon: str = None, visible: bool = True, category: str = None) -> None:
+    def __init__(self, coordinator: NeakasaCoordinator, deviceinfo: DeviceInfo, translation: str, key: str, unit: str, icon: str = None, visible: bool = True, category: str = None, device_class: str = None) -> None:
         super().__init__(coordinator)
         self.device_info = deviceinfo
         self.data_key = key
@@ -111,6 +120,8 @@ class NeakasaSensor(CoordinatorEntity):
             self._attr_icon = icon
         if category is not None:
             self._attr_entity_category = category
+        if device_class is not None:
+            self._attr_device_class = device_class
 
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -118,7 +129,20 @@ class NeakasaSensor(CoordinatorEntity):
     
     @property
     def state(self):
-        return getattr(self.coordinator.data, self.data_key)
+        if self.coordinator.category == "CatLitter":
+            return getattr(self.coordinator.data, self.data_key)
+        
+        # Vacuum mapping
+        mapping = {
+            "battery": "BatteryState",
+            "clean_area": "CleanAreas",
+            "clean_time": "CleanRunTime",
+            "wifiRssi": "WiFI_RSSI"
+        }
+        
+        raw_key = mapping.get(self.data_key, self.data_key)
+        val = self.coordinator.data.raw_data.get(raw_key, {}).get("value")
+        return val
     
     @property
     def extra_state_attributes(self):
