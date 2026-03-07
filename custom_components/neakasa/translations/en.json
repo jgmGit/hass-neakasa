@@ -91,6 +91,21 @@
             },
             "clean_time": {
                 "name": "Clean time"
+            },
+            "total_clean_areas": {
+                "name": "Total clean area"
+            },
+            "total_clean_times": {
+                "name": "Total clean time"
+            },
+            "filter_time": {
+                "name": "Filter life"
+            },
+            "main_brush_time": {
+                "name": "Main brush life"
+            },
+            "side_brush_time": {
+                "name": "Side brush life"
             }
         },
         "switch": {
