@@ -98,6 +98,9 @@
             "total_clean_times": {
                 "name": "Total clean time"
             },
+            "sweeping_times": {
+                "name": "Sweeping times"
+            },
             "filter_time": {
                 "name": "Filter life"
             },
