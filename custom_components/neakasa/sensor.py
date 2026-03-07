@@ -54,9 +54,9 @@ async def async_setup_entry(
             NeakasaSensor(coordinator, device_info, translation="clean_time", key="clean_time", unit=UnitOfTime.MINUTES, icon="mdi:timer-outline"),
             NeakasaSensor(coordinator, device_info, translation="total_clean_areas", key="total_clean_areas", unit="m²", icon="mdi:map-marker-path", category=EntityCategory.DIAGNOSTIC),
             NeakasaSensor(coordinator, device_info, translation="total_clean_times", key="total_clean_times", unit=UnitOfTime.MINUTES, icon="mdi:timer-outline", category=EntityCategory.DIAGNOSTIC),
-            NeakasaSensor(coordinator, device_info, translation="filter_time", key="filter_time", unit=UnitOfTime.MINUTES, icon="mdi:air-filter", category=EntityCategory.DIAGNOSTIC),
-            NeakasaSensor(coordinator, device_info, translation="main_brush_time", key="main_brush_time", unit=UnitOfTime.MINUTES, icon="mdi:brush", category=EntityCategory.DIAGNOSTIC),
-            NeakasaSensor(coordinator, device_info, translation="side_brush_time", key="side_brush_time", unit=UnitOfTime.MINUTES, icon="mdi:menu", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="filter_time", key="filter_time", unit=UnitOfTime.HOURS, icon="mdi:air-filter", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="main_brush_time", key="main_brush_time", unit=UnitOfTime.HOURS, icon="mdi:brush", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="side_brush_time", key="side_brush_time", unit=UnitOfTime.HOURS, icon="mdi:menu", category=EntityCategory.DIAGNOSTIC),
             NeakasaSensor(coordinator, device_info, translation="wifi_rssi", key="wifiRssi", unit=SIGNAL_STRENGTH_DECIBELS, visible=False, category=EntityCategory.DIAGNOSTIC, icon="mdi:wifi"),
         ])
 
@@ -149,16 +149,44 @@ class NeakasaSensor(CoordinatorEntity):
             "side_brush_time": "SideBrushTime",
             "wifiRssi": "WiFI_RSSI"
         }
-        
+
         raw_key = mapping.get(self.data_key, self.data_key)
         val = self.coordinator.data.raw_data.get(raw_key, {}).get("value")
+
+        if val is None:
+            return None
+
+        # Clean time is in seconds, convert to minutes
+        if self.data_key == "clean_time" or self.data_key == "total_clean_times":
+            return round(val / 60)
+
+        # Consumables raw value is minutes used. Calculate hours remaining.
+        if self.data_key == "filter_time":
+            return max(0, (9000 - val) // 60)
+
+        if self.data_key == "main_brush_time":
+            return max(0, (18000 - val) // 60)
+
+        if self.data_key == "side_brush_time":
+            return max(0, (12000 - val) // 60)
+
         return val
-    
+
     @property
     def extra_state_attributes(self):
-        return {
-            "state_class": SensorStateClass.MEASUREMENT
-        }
+        attrs = {"state_class": SensorStateClass.MEASUREMENT}
+
+        if getattr(self, "data_key", None) == "filter_time" and self.state is not None:
+             val = self.coordinator.data.raw_data.get("FilterTime", {}).get("value", 0)
+             attrs["percentage"] = max(0, 100 - int((val * 100) / 9000))
+        elif getattr(self, "data_key", None) == "main_brush_time" and self.state is not None:
+             val = self.coordinator.data.raw_data.get("MainBrushTime", {}).get("value", 0)
+             attrs["percentage"] = max(0, 100 - int((val * 100) / 18000))
+        elif getattr(self, "data_key", None) == "side_brush_time" and self.state is not None:
+             val = self.coordinator.data.raw_data.get("SideBrushTime", {}).get("value", 0)
+             attrs["percentage"] = max(0, 100 - int((val * 100) / 12000))
+
+        return attrs
 
 class NeakasaMapSensor(CoordinatorEntity):
     
