@@ -43,7 +43,6 @@ class NeakasaVacuum(CoordinatorEntity, StateVacuumEntity):
         | VacuumEntityFeature.PAUSE
         | VacuumEntityFeature.STOP
         | VacuumEntityFeature.RETURN_HOME
-        | VacuumEntityFeature.BATTERY
         | VacuumEntityFeature.FAN_SPEED
         | VacuumEntityFeature.STATE
         | VacuumEntityFeature.LOCATE
@@ -86,13 +85,9 @@ class NeakasaVacuum(CoordinatorEntity, StateVacuumEntity):
             return VacuumActivity.ERROR
         if mode in (0, 12, 16):
             return VacuumActivity.IDLE
-            
+
         return VacuumActivity.IDLE
 
-    @property
-    def battery_level(self) -> int:
-        """Return the battery level of the vacuum cleaner."""
-        return int(self.coordinator.data.raw_data.get("BatteryState", {}).get("value", 0))
 
     @property
     def fan_speed(self) -> str:
