@@ -109,6 +109,15 @@
             },
             "side_brush_time": {
                 "name": "Side brush life"
+            },
+            "mac_address": {
+                "name": "MAC Address"
+            },
+            "nickname": {
+                "name": "Nickname"
+            },
+            "model": {
+                "name": "Model"
             }
         },
         "switch": {
