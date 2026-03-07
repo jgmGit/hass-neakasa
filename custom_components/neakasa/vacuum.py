@@ -43,7 +43,6 @@ class NeakasaVacuum(CoordinatorEntity, StateVacuumEntity):
         | VacuumEntityFeature.PAUSE
         | VacuumEntityFeature.STOP
         | VacuumEntityFeature.RETURN_HOME
-        | VacuumEntityFeature.BATTERY
         | VacuumEntityFeature.FAN_SPEED
         | VacuumEntityFeature.STATE
         | VacuumEntityFeature.LOCATE
@@ -62,37 +61,33 @@ class NeakasaVacuum(CoordinatorEntity, StateVacuumEntity):
     @property
     def activity(self) -> VacuumActivity:
         """Return the current activity of the vacuum."""
-        # Mapping from WorkMode
-        # 0: ? 
-        # 1: ?
-        # 16: ? (User's JSON has 16)
-        # Based on typical robots:
-        # We might need more info, but let's guess based on WorkMode and PauseSwitch
         mode = self.coordinator.data.raw_data.get("WorkMode", {}).get("value")
         paused = self.coordinator.data.raw_data.get("PauseSwitch", {}).get("value") == 1
-        
+
         if paused:
             return VacuumActivity.PAUSED
-        
-        # Mapping from WorkMode discovery:
-        # 1: ? (Previously rejected)
-        # 2: Returning to charging base
-        # 16: Cleaning (Common for some models)
-        # 0: Idle/Docked
-        
-        if mode == 2 or mode == 13:
-            return VacuumActivity.RETURNING
-        if mode == 16:
+
+        # Mapping from Android BaseActivity7 Enum:
+        # 0: StandBy, 2: Cleaning, 3: Charging, 10: Pausing, 11: Faulting
+        # 12: Dormant, 13: BackCharging (Returning), 14: FullCharge
+        # 15: BackChargePause, 16: ShutDown, 17: RemoteControlling
+        # 18: SelfCleaning, 19: Drying, 20: DustCollecting
+
+        if mode in (2, 17, 18, 20):
             return VacuumActivity.CLEANING
-        if mode == 0:
+        if mode == 13:
+            return VacuumActivity.RETURNING
+        if mode in (3, 14, 19):
+            return VacuumActivity.DOCKED
+        if mode in (10, 15):
+            return VacuumActivity.PAUSED
+        if mode == 11:
+            return VacuumActivity.ERROR
+        if mode in (0, 12, 16):
             return VacuumActivity.IDLE
-            
+
         return VacuumActivity.IDLE
 
-    @property
-    def battery_level(self) -> int:
-        """Return the battery level of the vacuum cleaner."""
-        return int(self.coordinator.data.raw_data.get("BatteryState", {}).get("value", 0))
 
     @property
     def fan_speed(self) -> str:

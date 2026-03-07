@@ -449,42 +449,6 @@ class NeakasaAPI:
         
         _LOGGER.error("Could not find any 'Locate' (Find Me) service or property for this device.")
     
-    async def getDeviceTSL(self, iotId: str, productKey: str = None):
-        if not self.connected:
-            return None
-        
-        # Primary endpoint and version found in typical Neakasa/Aliyun setups
-        endpoint = '/thing/model/get'
-        ver = '1.0.4'
-        try:
-            config = Config(
-                app_key=self._app_key,
-                app_secret=self._app_secret,
-                domain=self.apiGatewayEndpoint
-            )
-            client = Client(config)
-            request = CommonParams(api_ver=ver, language=self._language, iot_token=self._iotToken)
-            
-            params = {"iotId": iotId}
-            if productKey:
-                params["productKey"] = productKey
-            
-            body = IoTApiRequest(version="1.0", params=params, request=request)
-            _LOGGER.debug(f"Requesting TSL from {endpoint} (ver: {ver})")
-            response = await self.async_executor(client.do_request,
-                endpoint, 'https', 'POST', None, body, RuntimeOptions()
-            )
-            
-            if response.body:
-                response_data = json.loads(response.body)
-                if response_data['code'] == 200 and response_data.get('data'):
-                    _LOGGER.info(f"Successfully discovered TSL from {endpoint}")
-                    return response_data['data']
-        except Exception:
-            pass
-        
-        return None
-    
     async def sandLeveling(self, iotId: str):
         await self._invokeService(iotId, "sandLeveling", {"bStartLeveling":1})
     

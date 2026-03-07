@@ -10,7 +10,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.const import PERCENTAGE, SIGNAL_STRENGTH_DECIBELS, UnitOfTime, EntityCategory, UnitOfMass
 from datetime import datetime
 
-from .const import DOMAIN, _LOGGER
+from .const import DOMAIN
 from .coordinator import NeakasaCoordinator
 
 async def async_setup_entry(
@@ -28,7 +28,7 @@ async def async_setup_entry(
         manufacturer="Neakasa",
         identifiers={(DOMAIN, coordinator.deviceid)}
     )
-    
+
     sensors = []
 
     if coordinator.category == "CatLitter":
@@ -51,7 +51,12 @@ async def async_setup_entry(
         sensors.extend([
             NeakasaSensor(coordinator, device_info, translation="battery", key="battery", unit=PERCENTAGE, icon="mdi:battery", device_class=SensorDeviceClass.BATTERY),
             NeakasaSensor(coordinator, device_info, translation="clean_area", key="clean_area", unit="m²", icon="mdi:map-marker-path"),
-            NeakasaSensor(coordinator, device_info, translation="clean_time", key="clean_time", unit=UnitOfTime.SECONDS, icon="mdi:timer-outline"),
+            NeakasaSensor(coordinator, device_info, translation="clean_time", key="clean_time", unit=UnitOfTime.MINUTES, icon="mdi:timer-outline"),
+            NeakasaSensor(coordinator, device_info, translation="total_clean_areas", key="total_clean_areas", unit="m²", icon="mdi:map-marker-path", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="total_clean_times", key="total_clean_times", unit=UnitOfTime.MINUTES, icon="mdi:timer-outline", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="filter_time", key="filter_time", unit=UnitOfTime.HOURS, icon="mdi:air-filter", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="main_brush_time", key="main_brush_time", unit=UnitOfTime.HOURS, icon="mdi:brush", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="side_brush_time", key="side_brush_time", unit=UnitOfTime.HOURS, icon="mdi:menu", category=EntityCategory.DIAGNOSTIC),
             NeakasaSensor(coordinator, device_info, translation="wifi_rssi", key="wifiRssi", unit=SIGNAL_STRENGTH_DECIBELS, visible=False, category=EntityCategory.DIAGNOSTIC, icon="mdi:wifi"),
         ])
 
@@ -59,10 +64,10 @@ async def async_setup_entry(
     async_add_entities(sensors)
 
 class NeakasaCatSensor(CoordinatorEntity):
-    
+
     _attr_should_poll = False
     _attr_has_entity_name = True
-    
+
     def __init__(self, coordinator: NeakasaCoordinator, deviceinfo: DeviceInfo, catName: str, catId: str, icon: str = None, visible: bool = True, category: str = None) -> None:
         super().__init__(coordinator)
         self.device_info = deviceinfo
@@ -80,7 +85,7 @@ class NeakasaCatSensor(CoordinatorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
-    
+
     @property
     def _records(self):
         return list(filter(lambda record: record['cat_id'] == self._catId, self.coordinator.data.record_list))
@@ -91,7 +96,7 @@ class NeakasaCatSensor(CoordinatorEntity):
             return 0
         last_record = self._records[0]
         return last_record['weight']
-    
+
     @property
     def extra_state_attributes(self):
         if len(self._records) == 0:
@@ -104,10 +109,10 @@ class NeakasaCatSensor(CoordinatorEntity):
         }
 
 class NeakasaSensor(CoordinatorEntity):
-    
+
     _attr_should_poll = False
     _attr_has_entity_name = True
-    
+
     def __init__(self, coordinator: NeakasaCoordinator, deviceinfo: DeviceInfo, translation: str, key: str, unit: str, icon: str = None, visible: bool = True, category: str = None, device_class: str = None) -> None:
         super().__init__(coordinator)
         self.device_info = deviceinfo
@@ -126,29 +131,62 @@ class NeakasaSensor(CoordinatorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
-    
+
     @property
     def state(self):
         if self.coordinator.category == "CatLitter":
             return getattr(self.coordinator.data, self.data_key)
-        
+
         # Vacuum mapping
         mapping = {
             "battery": "BatteryState",
             "clean_area": "CleanAreas",
             "clean_time": "CleanRunTime",
+            "total_clean_areas": "TotalCleanAreas",
+            "total_clean_times": "TotalCleanTimes",
+            "filter_time": "FilterTime",
+            "main_brush_time": "MainBrushTime",
+            "side_brush_time": "SideBrushTime",
             "wifiRssi": "WiFI_RSSI"
         }
-        
+
         raw_key = mapping.get(self.data_key, self.data_key)
         val = self.coordinator.data.raw_data.get(raw_key, {}).get("value")
+
+        if val is None:
+            return None
+
+        # Clean time is in seconds, convert to minutes
+        if self.data_key == "clean_time" or self.data_key == "total_clean_times":
+            return round(val / 60)
+
+        # Consumables raw value is minutes used. Calculate hours remaining.
+        if self.data_key == "filter_time":
+            return max(0, (9000 - val) // 60)
+
+        if self.data_key == "main_brush_time":
+            return max(0, (18000 - val) // 60)
+
+        if self.data_key == "side_brush_time":
+            return max(0, (12000 - val) // 60)
+
         return val
-    
+
     @property
     def extra_state_attributes(self):
-        return {
-            "state_class": SensorStateClass.MEASUREMENT
-        }
+        attrs = {"state_class": SensorStateClass.MEASUREMENT}
+
+        if getattr(self, "data_key", None) == "filter_time" and self.state is not None:
+             val = self.coordinator.data.raw_data.get("FilterTime", {}).get("value", 0)
+             attrs["percentage"] = max(0, 100 - int((val * 100) / 9000))
+        elif getattr(self, "data_key", None) == "main_brush_time" and self.state is not None:
+             val = self.coordinator.data.raw_data.get("MainBrushTime", {}).get("value", 0)
+             attrs["percentage"] = max(0, 100 - int((val * 100) / 18000))
+        elif getattr(self, "data_key", None) == "side_brush_time" and self.state is not None:
+             val = self.coordinator.data.raw_data.get("SideBrushTime", {}).get("value", 0)
+             attrs["percentage"] = max(0, 100 - int((val * 100) / 12000))
+
+        return attrs
 
 class NeakasaMapSensor(CoordinatorEntity):
     

@@ -190,30 +190,6 @@ class NeakasaCoordinator(DataUpdateCoordinator):
                 record_list=records['record_list'],
                 raw_data=devicedata
             )
-        
-        # Generic or Vacuum robot data
-        if not hasattr(self, "_tsl_logged"):
-            try:
-                from . import get_shared_api
-                api = await get_shared_api(self.hass, self.username, self.password)
-                
-                # Fetch productKey if not in config
-                product_key = self.config_entry.data.get("productKey")
-                if not product_key:
-                    devices = await api.getDevices()
-                    match = next((d for d in devices if d['iotId'] == self.deviceid), None)
-                    if match:
-                        product_key = match.get("productKey")
-
-                tsl = await api.getDeviceTSL(self.deviceid, product_key)
-                if tsl:
-                    _LOGGER.info("TSL for %s: %s", self.devicename, tsl)
-                else:
-                    _LOGGER.debug("TSL discovery returned None for %s (productKey: %s)", self.devicename, product_key)
-                self._tsl_logged = True
-            except Exception as exc:
-                _LOGGER.debug("Error getting TSL for %s: %s", self.devicename, exc)
-                self._tsl_logged = True
 
         wifi_rssi = devicedata.get('WiFI_RSSI', {}).get('value', 0)
         if not wifi_rssi:
