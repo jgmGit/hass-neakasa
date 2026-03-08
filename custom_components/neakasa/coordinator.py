@@ -23,7 +23,7 @@ class NeakasaAPIData:
 
     # Common fields
     wifiRssi: int
-    
+
     # Litter Box specific (optional)
     binFullWaitReset: Optional[bool] = None
     cleanCfg: Optional[dict[str, Any]] = None
@@ -45,6 +45,8 @@ class NeakasaAPIData:
 
     # Generic storage for newer devices
     raw_data: dict[str, Any] = field(default_factory=dict)
+    nickname: Optional[str] = None
+    model: Optional[str] = None
 
 class NeakasaCoordinator(DataUpdateCoordinator):
     """My coordinator."""
@@ -80,22 +82,22 @@ class NeakasaCoordinator(DataUpdateCoordinator):
 
         # API will be obtained from the shared manager when needed
         self.api = None
-        
+
 
     async def setProperty(self, key: str, value: Any):
         from . import get_shared_api
         api = await get_shared_api(self.hass, self.username, self.password)
         _LOGGER.debug("Setting property %s to %s for %s", key, value, self.devicename)
         await api.setDeviceProperties(self.deviceid, {key: value})
-        
+
         # Update local cached data
         if hasattr(self.data, key):
             setattr(self.data, key, value)
-        
+
         # Also update raw_data
         if self.data.raw_data is None:
             self.data.raw_data = {}
-        
+
         if key in self.data.raw_data:
             self.data.raw_data[key]["value"] = value
         else:
@@ -122,18 +124,44 @@ class NeakasaCoordinator(DataUpdateCoordinator):
         raise Exception('cannot find service to invoke')
 
     async def _getDeviceName(self):
-        if self._deviceName is not None:
-            return self._deviceName
-
         """get deviceName by iotId"""
         from . import get_shared_api
         api = await get_shared_api(self.hass, self.username, self.password)
         devices = await api.getDevices()
-        devices = list(filter(lambda devices: devices['iotId'] == self.deviceid, devices))
-        if(len(devices) == 0):
+
+        devices_filtered = list(filter(lambda d: d.get('iotId') == self.deviceid, devices))
+        if(len(devices_filtered) == 0):
             raise APIConnectionError("iotId not found in device list")
-        deviceName = devices[0]['deviceName']
+
+        device = devices_filtered[0]
+        # Prefer nickName explicitly, fallback to identityAlias, name, or deviceName
+        base_name = device.get('nickName') or device.get('identityAlias') or device.get('name') or device.get('deviceName') or self.deviceid
+        product_model = device.get('productModel')
+
+        if product_model and product_model not in base_name:
+            deviceName = f"{base_name} ({product_model})"
+        else:
+            deviceName = base_name
+
         self._deviceName = deviceName
+
+        if not hasattr(self, "data") or self.data is None:
+            # We construct an empty data object here if it doesn't exist yet so we can attach model info
+            self.data = NeakasaAPIData(wifiRssi=-1)
+        self.data.nickname = device.get('nickName') or device.get('identityAlias')
+        self.data.model = product_model
+
+        # Update the Home Assistant device registry to use the correct name
+        try:
+            from homeassistant.helpers import device_registry as dr
+            device_registry = dr.async_get(self.hass)
+            ha_device = device_registry.async_get_device(identifiers={(DOMAIN, self.deviceid)})
+            if ha_device and (ha_device.name_by_user != deviceName and ha_device.name != deviceName):
+                _LOGGER.info("Updating device registry name for %s to %s", self.deviceid, deviceName)
+                device_registry.async_update_device(ha_device.id, name_by_user=deviceName)
+        except Exception as e:
+            _LOGGER.warning("Could not update device registry name: %s", e)
+
         return deviceName
 
     async def _getRecords(self):
@@ -157,7 +185,23 @@ class NeakasaCoordinator(DataUpdateCoordinator):
         """Internal method to fetch and parse data."""
         devicedata = await self._getDeviceProperties()
         _LOGGER.debug("Raw device data for %s: %s", self.devicename, devicedata)
-        
+
+        # Fetch device list once to extract static properties like nickname and model
+        if not hasattr(self, "_static_props_fetched"):
+            try:
+                from . import get_shared_api
+                api = await get_shared_api(self.hass, self.username, self.password)
+                devices = await api.getDevices()
+                self._static_props_fetched = True
+
+                # Cache nickname and model to self
+                target_device = next((d for d in devices if d.get('iotId') == self.deviceid), {})
+                self._cached_nickname = target_device.get('nickName') or target_device.get('identityAlias')
+                self._cached_model = target_device.get('productName')
+
+            except Exception as e:
+                _LOGGER.debug("Failed to fetch static properties: %s", e)
+
         if self.category == "CatLitter":
             newLastUseDate = devicedata['catLeft']['time']
 
@@ -165,7 +209,7 @@ class NeakasaCoordinator(DataUpdateCoordinator):
                 self._recordsCache.mark_as_stale()
 
             self.lastUseDate = newLastUseDate
-            
+
             records = await self._getRecords()
 
             return NeakasaAPIData(
@@ -191,13 +235,16 @@ class NeakasaCoordinator(DataUpdateCoordinator):
                 raw_data=devicedata
             )
 
+        # Generic or Vacuum robot data
         wifi_rssi = devicedata.get('WiFI_RSSI', {}).get('value', 0)
         if not wifi_rssi:
             wifi_rssi = devicedata.get('NetWorkStatus', {}).get('value', {}).get('WiFi_RSSI', 0)
 
         return NeakasaAPIData(
             wifiRssi=wifi_rssi,
-            raw_data=devicedata
+            raw_data=devicedata,
+            nickname=getattr(self, "_cached_nickname", None),
+            model=getattr(self, "_cached_model", None)
         )
 
     async def async_update_data(self):

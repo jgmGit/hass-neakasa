@@ -45,7 +45,7 @@ class NeakasaAPI:
                 await self.connect(username, password, False)
             else:
                 raise
-    
+
     async def _loadBaseUrlByAccount(self, username: str):
         try:
             timestamp = str(int(time.time()))
@@ -68,7 +68,7 @@ class NeakasaAPI:
                 self.baseurl = response_json['data']['web']
         except ClientError as exc:
             raise APIConnectionError("Error connecting to api.")
-    
+
     async def loadAuthTokens(self, username: str, password: str):
         try:
             timestamp = str(int(time.time()))
@@ -129,7 +129,7 @@ class NeakasaAPI:
             raise APIConnectionError("Error loading region data." + response_data['message'])
         self.oaApiGatewayEndpoint = response_data['data']['oaApiGatewayEndpoint']
         self.apiGatewayEndpoint = response_data['data']['apiGatewayEndpoint']
-    
+
     async def _getVid(self):
         config = Config(
             app_key=self._app_key,
@@ -291,16 +291,25 @@ class NeakasaAPI:
         response_data = json.loads(response.body)
         if response_data['code'] != 200:
             raise APIConnectionError("Error getting devices: " + response_data['message'])
+
+        # Log to homeassistant for debugging
+        try:
+            _LOGGER.debug(f"=== GET DEVICES RESPONSE START ===")
+            _LOGGER.debug(json.dumps(response_data['data']['data'], indent=2))
+            _LOGGER.debug(f"=== GET DEVICES RESPONSE END ===")
+        except Exception as e:
+            _LOGGER.error("Failed to log devices list: %s", e)
+
         return response_data['data']['data']
 
     async def getDeviceProperties(self, iotId: str):
         if not self.connected:
             raise APIConnectionError("api not connected")
-        
+
         # Debug logging for authentication tokens
         _LOGGER.debug(f"Getting device properties for iotId: {iotId}")
         _LOGGER.debug(f"API connected: {self.connected}, iotToken present: {hasattr(self, '_iotToken') and self._iotToken is not None}")
-        
+
         config = Config(
             app_key=self._app_key,
             app_secret=self._app_secret,
@@ -400,10 +409,10 @@ class NeakasaAPI:
         if response_data['code'] != 200:
             _LOGGER.error("Error invoking service: %s", response_data)
             raise APIConnectionError(f"Error invoking service: {response_data.get('message', 'Unknown error')}")
-    
+
     async def cleanNow(self, iotId: str):
         await self._invokeService(iotId, "cleanNow", {"bStartClean":1})
-    
+
     async def goHome(self, iotId: str):
         # Android Logcat discovery: 'click_charge' sends WorkMode=13 then AppState=1
         try:
@@ -421,9 +430,9 @@ class NeakasaAPI:
                 return
             except Exception:
                 continue
-        
+
         raise APIConnectionError("Could not find the 'Return to Charging Base' command.")
-    
+
     async def findMe(self, iotId: str):
         # Android Discovery: SettingsActivityVm.callRobot sends {'FindRobot': 8}
         try:
@@ -446,12 +455,12 @@ class NeakasaAPI:
                     return
                 except Exception:
                     continue
-        
+
         _LOGGER.error("Could not find any 'Locate' (Find Me) service or property for this device.")
     
     async def sandLeveling(self, iotId: str):
         await self._invokeService(iotId, "sandLeveling", {"bStartLeveling":1})
-    
+
     async def getStatistics(self, deviceName: str):
         try:
             timestamp = int(time.time())
@@ -478,7 +487,7 @@ class NeakasaAPI:
                 return response_json['data']
         except ClientError:
             raise APIConnectionError("Error connecting to api.")
-    
+
     async def getRecords(self, deviceName: str):
         try:
             timestamp = int(time.time())
