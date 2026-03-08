@@ -13,9 +13,12 @@ The Neakasa Home Assistant Custom Integration allows you to integrate your Neaka
 
 ### Currently supported devices
 - Neakasa M1 (Cat Litter Box)
+- Neabot Q11 (Robot Vacuum)
 
 ### Currently supported features
-#### Sensors:
+
+#### Neakasa M1 (Cat Litter Box)
+##### Sensors:
 |Sensor|Unit|Example Value|Enabled by default|
 |------|-------------|------|------|
 |Cat litter level|percent|80 %|yes|
@@ -27,18 +30,18 @@ The Neakasa Home Assistant Custom Integration allows you to integrate your Neaka
 |Bin state|normal / full / missing|normal|yes|
 |Cat {name}|kg|3.8|yes|
 
-#### Binary sensors:
+##### Binary sensors:
 |Binary Sensor|Example Value|Enabled by default|
 |-------------|-------------|------------------|
 |Garbage can full|off|yes|
 
-#### Buttons:
+##### Buttons:
 |Button|Action|Enabled by default|
 |------|------|------------------|
 |Clean|Cleans the litter box|yes|
 |Level|Initiates the leveling process|yes|
 
-#### Switches:
+##### Switches:
 |Switch|Enabled by default|
 |------|------------------|
 |Kitten mode|no (rare edgecase)|
@@ -48,6 +51,28 @@ The Neakasa Home Assistant Custom Integration allows you to integrate your Neaka
 |Silent mode|yes|
 |Automatic recovery|no (potentialy dangerous!)|
 |Unstoppable cycle|yes|
+
+#### Neabot Q11 (Robot Vacuum)
+##### Sensors:
+|Sensor|Unit| Example Value |Enabled by default|
+|------|-------------|---------------|------|
+|Battery|percent| 100 %         |yes|
+|Nickname|string| Sweeper       |yes|
+|Model|string| Neabot - Q11  |yes|
+|Clean area|m²| 15 m²         |yes|
+|Clean time|minutes| 20 min        |yes|
+|Total clean area|m²| 150 m²        |no|
+|Total clean time|minutes| 400 min       |no|
+|Sweeping times|count| 15            |no|
+|Filter life|hours| 140 h         |no|
+|Main brush life|hours| 140 h         |no|
+|Side brush life|hours| 140 h         |no|
+|WiFi RSS|dB| -60 dB        |no (debug information)|
+
+##### Vacuum:
+|Entity|Action|Enabled by default|
+|------|------|------------------|
+|Vacuum|Start, Pause, Stop, Return to Base, Locate|yes|
 
 ## Installation
 
