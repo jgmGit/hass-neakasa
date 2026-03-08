@@ -54,9 +54,13 @@ async def async_setup_entry(
             NeakasaSensor(coordinator, device_info, translation="clean_time", key="clean_time", unit=UnitOfTime.MINUTES, icon="mdi:timer-outline"),
             NeakasaSensor(coordinator, device_info, translation="total_clean_areas", key="total_clean_areas", unit="m²", icon="mdi:map-marker-path", category=EntityCategory.DIAGNOSTIC),
             NeakasaSensor(coordinator, device_info, translation="total_clean_times", key="total_clean_times", unit=UnitOfTime.MINUTES, icon="mdi:timer-outline", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="sweeping_times", key="sweeping_times", unit=None, icon="mdi:counter", category=EntityCategory.DIAGNOSTIC),
             NeakasaSensor(coordinator, device_info, translation="filter_time", key="filter_time", unit=UnitOfTime.HOURS, icon="mdi:air-filter", category=EntityCategory.DIAGNOSTIC),
             NeakasaSensor(coordinator, device_info, translation="main_brush_time", key="main_brush_time", unit=UnitOfTime.HOURS, icon="mdi:brush", category=EntityCategory.DIAGNOSTIC),
             NeakasaSensor(coordinator, device_info, translation="side_brush_time", key="side_brush_time", unit=UnitOfTime.HOURS, icon="mdi:menu", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="mac_address", key="mac_address", unit=None, icon="mdi:network", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="nickname", key="nickname", unit=None, icon="mdi:robot", category=EntityCategory.DIAGNOSTIC),
+            NeakasaSensor(coordinator, device_info, translation="model", key="model", unit=None, icon="mdi:robot-vacuum", category=EntityCategory.DIAGNOSTIC),
             NeakasaSensor(coordinator, device_info, translation="wifi_rssi", key="wifiRssi", unit=SIGNAL_STRENGTH_DECIBELS, visible=False, category=EntityCategory.DIAGNOSTIC, icon="mdi:wifi"),
         ])
 
@@ -137,6 +141,12 @@ class NeakasaSensor(CoordinatorEntity):
         if self.coordinator.category == "CatLitter":
             return getattr(self.coordinator.data, self.data_key)
 
+        if self.data_key == "nickname":
+            return getattr(self.coordinator.data, "nickname", self.coordinator.devicename)
+
+        if self.data_key == "model":
+            return getattr(self.coordinator.data, "model", self.coordinator.data.raw_data.get("productModel"))
+
         # Vacuum mapping
         mapping = {
             "battery": "BatteryState",
@@ -144,9 +154,12 @@ class NeakasaSensor(CoordinatorEntity):
             "clean_time": "CleanRunTime",
             "total_clean_areas": "TotalCleanAreas",
             "total_clean_times": "TotalCleanTimes",
+            "sweeping_times": "RunTimes",
             "filter_time": "FilterTime",
             "main_brush_time": "MainBrushTime",
             "side_brush_time": "SideBrushTime",
+            "mac_address": "MACAddress",
+            "nickname": "Nickname",
             "wifiRssi": "WiFI_RSSI"
         }
 
@@ -189,10 +202,10 @@ class NeakasaSensor(CoordinatorEntity):
         return attrs
 
 class NeakasaMapSensor(CoordinatorEntity):
-    
+
     _attr_should_poll = False
     _attr_has_entity_name = True
-    
+
     def __init__(self, coordinator: NeakasaCoordinator, deviceinfo: DeviceInfo, translation: str, key: str, options: list, icon: str = None, visible: bool = True) -> None:
         super().__init__(coordinator)
         self.device_info = deviceinfo
@@ -207,7 +220,7 @@ class NeakasaMapSensor(CoordinatorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
-    
+
     @property
     def state(self):
         rawValue = getattr(self.coordinator.data, self.data_key)
@@ -217,15 +230,15 @@ class NeakasaMapSensor(CoordinatorEntity):
         value = self.key_options[rawValue]
         if value is None:
             return rawValue
-        
+
         return value
 
 class NeakasaTimestampSensor(CoordinatorEntity):
-    
+
     _attr_should_poll = False
     _attr_has_entity_name = True
     _attr_device_class = SensorDeviceClass.TIMESTAMP
-    
+
     def __init__(self, coordinator: NeakasaCoordinator, deviceinfo: DeviceInfo, translation: str, key: str, icon: str = None, visible: bool = True) -> None:
         super().__init__(coordinator)
         self.device_info = deviceinfo
@@ -239,7 +252,7 @@ class NeakasaTimestampSensor(CoordinatorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         self.async_write_ha_state()
-    
+
     @property
     def state(self):
         timestamp = getattr(self.coordinator.data, self.data_key) / 1000

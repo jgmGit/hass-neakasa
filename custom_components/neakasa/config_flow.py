@@ -56,8 +56,15 @@ class NeakasaConfigFlow(ConfigFlow, domain=DOMAIN):
             for device in devices:
                 category = device.get("categoryKey")
                 device_id = device.get("iotId")
-                device_name = device.get("deviceName") or device_id
-                
+
+                base_name = device.get("nickName") or device.get("identityAlias") or device.get("name") or device.get("deviceName") or device_id
+                product_model = device.get("productModel")
+
+                if product_model and product_model not in base_name:
+                    device_name = f"{base_name} ({product_model})"
+                else:
+                    device_name = base_name
+
                 _LOGGER.debug("Inspecting device: %s, category: %s", device_name, category)
                 
                 # Support CatLitter and try to find the vacuum
